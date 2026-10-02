@@ -20,21 +20,29 @@ usage:
   gromon new [--template FOLDER] <name>    start a project
   gromon run [options] <file.py|folder>   run it, reloading on changes
   gromon routes <file.py|folder>          print the routes an app has
+  gromon cls                              clear the screen
 
 `new` is also spelled `createapp`.
 
 options:
-  --template FOLDER  copy this folder instead of the built-in starter
+  --template FOLDER  copy this starter instead of the built-in one
   --host HOST        address to bind          (default 127.0.0.1)
   --port PORT        port to bind             (default 8000)
   --no-reload        do not watch for changes
   -h, --help         show this message
 
-A template folder is a starter kept in git. Every {name} in a file, or in a
-path, becomes the project name. Use . to start from the folder you are in:
+A template is a starter kept in git. Every {name} in a file, or in a path,
+becomes the project name. Use . for the folder you are in:
 
     gromon createapp shop --template ./gromon-starter
     gromon createapp shop --template .
+
+It can also be online, so a starter can live anywhere: an archive over http,
+https or file, a git repository, or a GitHub owner/repo.
+
+    gromon createapp shop --template https://example.com/starter.zip
+    gromon createapp shop --template https://github.com/someone/starter.git
+    gromon createapp shop --template someone/starter
 """
 
 
@@ -182,6 +190,9 @@ def main(argv=None):
         return
 
     command = arguments.pop(0)
+    if command == "cls":
+        os.system("cls" if os.name == "nt" else "clear")
+        return
     if command in ("new", "createapp"):
         start_project(arguments)
         return

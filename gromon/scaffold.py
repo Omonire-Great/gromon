@@ -5,11 +5,22 @@ never reach back into gromon/ for its own files, and it keeps every generated
 file reviewable in one place.
 """
 
+import contextlib
 import keyword
+import os
 import re
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9._-]*")
+GITHUB = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+ONLINE = ("http://", "https://", "file://", "git@", "ssh://")
+ROOM = 200 * 1024 * 1024
 
 # A template is usually a git checkout, so these are never part of the project.
 SKIP = {
@@ -267,9 +278,11 @@ def compiler():
 def create(name, template=None):
     """Write a starter project into a folder named after it.
 
-    `template` is a folder to copy instead of the built-in starter, so a team can
-    keep its own shape in git and scaffold from that. An empty target folder is
-    fine to use, one with files in it is not: overwriting someone's work is not a
+    `template` is where to get the shape of the project from, so a team can keep
+    it in git and scaffold from that instead of the built-in starter. It is a
+    folder, or something online to fetch: an archive over http, https or file, a
+    git repository, or a `owner/repo` shorthand. An empty target folder is fine
+    to use, one with files in it is not: overwriting someone's work is not a
     default anybody wants.
     """
     problem = unusable(name)
@@ -280,7 +293,126 @@ def create(name, template=None):
     if root.exists() and any(root.iterdir()):
         raise ValueError(f"{name} already has files in it")
 
-    return from_folder(name, root, Path(template)) if template else builtin(name, root)
+    if not template:
+        return builtin(name, root)
+
+    if Path(template).is_dir():
+        source = Path(template)
+        if risky(source):
+            raise ValueError(f"{source} is too big to be a template, copy the part you want")
+        return from_folder(name, root, source)
+
+    if not online(template):
+        raise ValueError(f"no template folder at {template}")
+
+    with fetched(template) as folder:
+        return from_folder(name, root, topmost(folder))
+
+
+def online(template):
+    """True when a template is somewhere to fetch rather than a folder here."""
+    return template.startswith(ONLINE) or template.endswith(".git") or bool(GITHUB.fullmatch(template))
+
+
+def risky(source):
+    """True for a folder nobody meant to copy wholesale by accident."""
+    here = source.resolve()
+    return here == Path(here.anchor) or here == Path.home()
+
+
+@contextlib.contextmanager
+def fetched(template):
+    """A local copy of a template from somewhere else, tidied up afterwards."""
+    with tempfile.TemporaryDirectory() as scratch:
+        folder = Path(scratch) / "template"
+        folder.mkdir()
+        try:
+            if template.endswith(".git") or template.startswith(("git@", "ssh://")):
+                clone(template, folder)
+            else:
+                unpack(download(where(template)), folder)
+        except (OSError, zipfile.BadZipFile, tarfile.TarError) as problem:
+            raise ValueError(f"could not fetch {template}: {problem}") from None
+        yield folder
+
+
+def where(template):
+    """The address to fetch, turning `owner/repo` into a GitHub archive."""
+    if "://" not in template and GITHUB.fullmatch(template):
+        return f"https://github.com/{template}/archive/refs/heads/main.tar.gz"
+    return template
+
+
+def download(url):
+    """Fetch an archive to a file on disk."""
+    request = urllib.request.Request(url, headers={"User-Agent": "gromon"})
+    kind = ".zip" if Path(url).suffix == ".zip" else ".tar.gz"
+    with contextlib.closing(urllib.request.urlopen(request, timeout=60)) as reply:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=kind) as handle:
+            shutil.copyfileobj(reply, handle, ROOM)
+            return Path(handle.name)
+
+
+def clone(url, folder):
+    """A shallow copy of a git repository."""
+    done = subprocess.run(
+        ["git", "clone", "--depth", "1", "--quiet", url, str(folder)],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if done.returncode:
+        said = (done.stderr or done.stdout).strip().splitlines()
+        raise ValueError(f"could not clone {url}: {said[-1] if said else 'git failed'}")
+
+
+def unpack(archive, folder):
+    """Take an archive apart, refusing to write outside `folder`."""
+    spent = 0
+    if zipfile.is_zipfile(archive):
+        with zipfile.ZipFile(archive) as zipped:
+            for member in zipped.infolist():
+                spent += member.file_size
+                if spent > ROOM:
+                    raise ValueError("the template is larger than gromon will unpack")
+                target = landing(folder, member.filename)
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zipped.open(member) as reader:
+                    target.write_bytes(reader.read())
+        return
+
+    with tarfile.open(archive) as tar:
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+            spent += member.size
+            if spent > ROOM:
+                raise ValueError("the template is larger than gromon will unpack")
+            reader = tar.extractfile(member)
+            if reader is None:
+                continue
+            target = landing(folder, member.name)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(reader.read())
+
+
+def landing(folder, member):
+    """The one place an archive entry is allowed to land."""
+    target = (folder / member).resolve()
+    if target != folder.resolve() and folder.resolve() not in target.parents:
+        raise ValueError(f"the template tries to write outside itself: {member}")
+    return target
+
+
+def topmost(folder):
+    """Archives wrap everything in one folder, so step into it."""
+    entries = [item for item in folder.iterdir() if item.name != "__MACOSX"]
+    if len(entries) == 1 and entries[0].is_dir():
+        return entries[0]
+    return folder
 
 
 def builtin(name, root):
@@ -318,7 +450,10 @@ def from_folder(name, root, source):
             continue
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(fill(item.read_bytes(), name))
+        try:
+            target.write_bytes(fill(item.read_bytes(), name))
+        except OSError as problem:
+            raise ValueError(f"could not read {item}: {problem.strerror}") from None
         written.append(target)
 
     if not written:
