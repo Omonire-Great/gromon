@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gromon"
+version = "0.1.0"
+description = "Build Python applications with less code."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+keywords = ["web", "microframework", "http", "json", "api"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+
+[project.optional-dependencies]
+templates = ["jinja2>=3"]
+dev = ["pytest", "ruff", "jinja2>=3"]
+
+[project.scripts]
+gromon = "gromon.cli:main"
+
+[tool.setuptools]
+packages = ["gromon"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+# Pyflakes, plus the error classes of pycodestyle. Deliberately not the full
+# ruleset: this codebase imports inside functions to break import cycles and
+# uses sha1 for the websocket handshake, both on purpose.
+select = ["E4", "E7", "E9", "F", "W"]

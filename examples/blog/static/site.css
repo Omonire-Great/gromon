@@ -1,0 +1,38 @@
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 0;
+  color: var(--st-text);
+  font: 16px system-ui;
+}
+
+a {
+  color: var(--st-accent);
+  text-decoration: none;
+}
+
+.posts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.posts li {
+  background: var(--st-card);
+  border-radius: var(--st-radius-lg);
+  padding: 14px 18px;
+}
+
+.x-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--st-muted);
+  font-size: 12px;
+}

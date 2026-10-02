@@ -1,0 +1,10 @@
+# Keep line endings the same everywhere: this repo is edited on Windows and
+# tested on Linux, and mixed endings turn every file into a whole-file diff.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

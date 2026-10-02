@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ title }}{% endblock %}</title>
+<script src="https://cdn.jsdelivr.net/npm/fscss@1.2.4/runtime.min.js" async></script>
+<style>
+@import((*) from st-core@v2)
+@st-root()
+@st-container(body)
+{% block style %}{% endblock %}
+</style>
+<link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>

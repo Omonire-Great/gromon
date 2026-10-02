@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}404 - {{ title }}{% endblock %}
+{% block style %}
+@st-stat-card(.stat-card)
+{% endblock %}
+{% block body %}
+<main>
+  <div class="stat-card">
+    <div class="st-stat-label">ERROR</div>
+    <div class="st-stat-value">404</div>
+    <div class="st-stat-delta down">nothing at {{ path }}</div>
+  </div>
+  <p><a href="/">Back to {{ title }}</a></p>
+</main>
+{% endblock %}
