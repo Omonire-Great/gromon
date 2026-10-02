@@ -21,6 +21,8 @@ usage:
   gromon run [options] <file.py|folder>   run it, reloading on changes
   gromon routes <file.py|folder>          print the routes an app has
 
+`new` is also spelled `createapp`.
+
 options:
   --template FOLDER  copy this folder instead of the built-in starter
   --host HOST        address to bind          (default 127.0.0.1)
@@ -29,9 +31,10 @@ options:
   -h, --help         show this message
 
 A template folder is a starter kept in git. Every {name} in a file, or in a
-path, becomes the project name:
+path, becomes the project name. Use . to start from the folder you are in:
 
-    gromon new shop --template ./gromon-starter
+    gromon createapp shop --template ./gromon-starter
+    gromon createapp shop --template .
 """
 
 
@@ -175,7 +178,7 @@ def main(argv=None):
         return
 
     command = arguments.pop(0)
-    if command == "new":
+    if command in ("new", "createapp"):
         start_project(arguments)
         return
     if command not in ("run", "_serve", "routes"):

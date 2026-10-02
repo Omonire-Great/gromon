@@ -367,3 +367,61 @@ class TestNewProjectFromATemplate:
         finished = self.start(tmp_path, "shop", "--template", str(source))
         assert finished.returncode != 0
         assert "already has files" in finished.stderr
+
+
+class TestCreateappSpelling:
+    def test_createapp_scaffolds_like_new(self, tmp_path):
+        finished = run("createapp", "shop", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "app.py").is_file()
+
+    def test_createapp_names_the_folder_it_wrote(self, tmp_path):
+        finished = run("createapp", "shop", cwd=str(tmp_path))
+        assert "Created shop/" in finished.stdout
+
+    def test_new_still_works(self, tmp_path):
+        finished = run("new", "shop", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "app.py").is_file()
+
+
+class TestTemplateFromTheCurrentFolder:
+    def here(self, tmp_path):
+        (tmp_path / "sub").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "app.py").write_text('"""A {name} starter."""\n')
+        (tmp_path / "sub" / "helper.py").write_text("NAME = '{name}'\n")
+        return tmp_path
+
+    def test_a_dot_copies_the_folder_you_are_in(self, tmp_path):
+        self.here(tmp_path)
+        finished = run("createapp", "shop", "--template", ".", cwd=str(tmp_path))
+
+        assert finished.returncode == 0, finished.stderr
+        project = Path(tmp_path) / "shop"
+        assert '"""A shop starter."""' in (project / "app.py").read_text()
+        assert "NAME = 'shop'" in (project / "sub" / "helper.py").read_text()
+
+    def test_a_dot_does_not_copy_the_folder_it_is_writing_into(self, tmp_path):
+        self.here(tmp_path)
+        finished = run("createapp", "shop", "--template", ".", cwd=str(tmp_path))
+
+        assert finished.returncode == 0, finished.stderr
+        project = Path(tmp_path) / "shop"
+        assert not (project / "shop").exists()
+        assert not (project / "sub" / "shop").exists()
+
+    def test_a_dot_does_not_reach_a_folder_named_like_the_project(self, tmp_path):
+        self.here(tmp_path)
+        (Path(tmp_path) / "shop").mkdir()
+
+        finished = run("createapp", "shop", "--template", ".", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert not (Path(tmp_path) / "shop" / "shop").exists()
+
+    def test_a_dot_still_leaves_out_junk(self, tmp_path):
+        self.here(tmp_path)
+        (Path(tmp_path) / "__pycache__").mkdir()
+        (Path(tmp_path) / "__pycache__" / "stale.pyc").write_bytes(b"\x00")
+
+        run("createapp", "shop", "--template", ".", cwd=str(tmp_path))
+        assert not (Path(tmp_path) / "shop" / "__pycache__").exists()

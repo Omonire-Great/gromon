@@ -596,6 +596,7 @@ from that instead of the built-in one:
 
 ```bash
 gromon new shop --template ./gromon-starter
+gromon createapp shop --template ./gromon-starter   # same thing
 ```
 
 The folder becomes the project. It **replaces** the built-in starter rather than
@@ -608,6 +609,18 @@ gromon-starter/
   README.md                  # {name}
   api/{name}/__init__.py     NAME = "{name}"
 ```
+
+Use `.` to start from the folder you are standing in, which is handy when the
+shape already exists and you only want the new name filled in:
+
+```bash
+cd my-current-app
+gromon createapp shop --template .
+# -> ./shop/, with {name} already replaced by shop
+```
+
+Gromon reads the folder before it writes anything, so pointing it at `.` cannot
+end up copying the new project into itself.
 
 `.git`, `__pycache__`, `node_modules`, `*.pyc` and similar are left out, so it
 works straight from a git checkout. Binary files are copied untouched.

@@ -303,10 +303,13 @@ def from_folder(name, root, source):
     if not source.is_dir():
         raise ValueError(f"no template folder at {source}")
 
+    # Taken before anything is written, so `--template .` cannot walk into the
+    # very folder it is creating.
+    items = sorted(source.rglob("*"))
     written = []
-    for item in sorted(source.rglob("*")):
+    for item in items:
         relative = item.relative_to(source)
-        if ignored(relative):
+        if ignored(relative) or inside(relative, root):
             continue
 
         target = root / str(relative).replace("{name}", name)
@@ -318,6 +321,12 @@ def from_folder(name, root, source):
         target.write_bytes(fill(item.read_bytes(), name))
         written.append(target)
     return written
+
+
+def inside(relative, root):
+    """True when a template entry is the project folder, or sits under it."""
+    target = (root.parent / relative).resolve()
+    return target == root.resolve() or root.resolve() in target.parents
 
 
 def ignored(relative):
