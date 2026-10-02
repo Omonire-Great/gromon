@@ -1,7 +1,10 @@
 """The command line: run, reload, and the routes table."""
 
+import os
 import subprocess
 import sys
+import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -429,6 +432,185 @@ class TestEmptyTemplate:
         assert finished.returncode != 0
         assert "no files in the template folder" in finished.stderr
         assert "IndexError" not in finished.stderr
+
+
+class TestOnlineTemplate:
+    def leaf(self, tmp_path):
+        here = Path(tmp_path) / "starter"
+        (here / "api").mkdir(parents=True, exist_ok=True)
+        (here / "app.py").write_text('"""A {name} starter."""\n')
+        (here / "api" / "{name}.py").write_text('NAME = "{name}"\n')
+        (here / "logo.bin").write_bytes(bytes([0, 1, 2, 255]))
+        return here
+
+    def targz(self, tmp_path, wrapped=True):
+        archive = Path(tmp_path) / "starter.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(self.leaf(tmp_path), arcname="starter-main" if wrapped else ".")
+        return archive
+
+    def zip(self, tmp_path, wrapped=True):
+        archive = Path(tmp_path) / "starter.zip"
+        root = self.leaf(tmp_path)
+        with zipfile.ZipFile(archive, "w") as zipped:
+            for item in sorted(root.rglob("*")):
+                if item.is_file():
+                    inside = str(item.relative_to(root))
+                    zipped.write(item, f"starter-main/{inside}" if wrapped else inside)
+        return archive
+
+    def start(self, tmp_path, template):
+        return run("new", "shop", "--template", template, cwd=str(tmp_path))
+
+    def test_a_tar_archive_over_file_url(self, tmp_path):
+        finished = self.start(tmp_path, self.targz(tmp_path).as_uri())
+        assert finished.returncode == 0, finished.stderr
+        assert '"""A shop starter."""' in (Path(tmp_path) / "shop" / "app.py").read_text()
+
+    def test_a_zip_archive_over_file_url(self, tmp_path):
+        finished = self.start(tmp_path, self.zip(tmp_path).as_uri())
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "api" / "shop.py").is_file()
+
+    def test_it_steps_into_the_folder_an_archive_wraps_itself_in(self, tmp_path):
+        self.start(tmp_path, self.targz(tmp_path).as_uri())
+        assert not (Path(tmp_path) / "shop" / "starter-main").exists()
+
+    def test_an_archive_with_nothing_wrapping_it(self, tmp_path):
+        finished = self.start(tmp_path, self.targz(tmp_path, wrapped=False).as_uri())
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "app.py").is_file()
+
+    def test_a_binary_file_survives_the_round_trip(self, tmp_path):
+        self.start(tmp_path, self.targz(tmp_path).as_uri())
+        assert (Path(tmp_path) / "shop" / "logo.bin").read_bytes() == bytes([0, 1, 2, 255])
+
+    def test_junk_in_an_archive_is_left_out(self, tmp_path):
+        here = self.leaf(tmp_path)
+        (here / "__pycache__").mkdir()
+        (here / "__pycache__" / "stale.pyc").write_bytes(b"\x00")
+        archive = Path(tmp_path) / "starter.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(here, arcname="starter-main")
+
+        self.start(tmp_path, archive.as_uri())
+        assert not (Path(tmp_path) / "shop" / "__pycache__").exists()
+
+    def test_an_address_that_is_not_there_says_so(self, tmp_path):
+        finished = self.start(tmp_path, "https://gromon.invalid/nope.tar.gz")
+        assert finished.returncode != 0
+        assert "could not fetch" in finished.stderr
+        assert "Traceback" not in finished.stderr
+
+    def test_something_that_is_not_an_archive_says_so(self, tmp_path):
+        page = Path(tmp_path) / "page.html"
+        page.write_text("<html>not an archive</html>")
+        finished = self.start(tmp_path, page.as_uri())
+
+        assert finished.returncode != 0
+        assert "could not fetch" in finished.stderr
+        assert "Traceback" not in finished.stderr
+
+    def test_a_tar_cannot_write_outside_itself(self, tmp_path):
+        archive = Path(tmp_path) / "evil.tar.gz"
+        payload = Path(tmp_path) / "payload.txt"
+        payload.write_text("gotcha")
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(payload, arcname="../../escaped.txt")
+
+        finished = self.start(tmp_path, archive.as_uri())
+        assert finished.returncode != 0
+        assert "outside itself" in finished.stderr
+
+    def test_a_zip_cannot_write_outside_itself(self, tmp_path):
+        archive = Path(tmp_path) / "evil.zip"
+        payload = Path(tmp_path) / "payload.txt"
+        payload.write_text("gotcha")
+        with zipfile.ZipFile(archive, "w") as zipped:
+            zipped.write(payload, "../../escaped.txt")
+
+        finished = self.start(tmp_path, archive.as_uri())
+        assert finished.returncode != 0
+        assert "outside itself" in finished.stderr
+
+    def test_a_local_folder_wins_over_the_github_shorthand(self, tmp_path):
+        source = Path(tmp_path) / "owner" / "repo"
+        source.mkdir(parents=True)
+        (source / "app.py").write_text("# {name}\n")
+
+        finished = run("new", "shop", "--template", "owner/repo", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "app.py").is_file()
+
+    def test_a_github_shorthand_becomes_an_address(self):
+        from gromon.scaffold import where
+
+        assert where("someone/starter") == (
+            "https://github.com/someone/starter/archive/refs/heads/main.tar.gz"
+        )
+        assert where("https://example.com/s.zip") == "https://example.com/s.zip"
+
+    def test_a_git_url_is_left_alone(self):
+        from gromon.scaffold import where
+
+        assert where("https://github.com/someone/starter.git") == (
+            "https://github.com/someone/starter.git"
+        )
+
+
+class TestUnsafeTemplates:
+    def test_the_drive_root_is_refused(self):
+        from gromon.scaffold import risky
+
+        assert risky(Path(Path.cwd().anchor)) is True
+
+    def test_the_home_folder_is_refused(self):
+        from gromon.scaffold import risky
+
+        assert risky(Path.home()) is True
+
+    def test_an_ordinary_folder_is_fine(self, tmp_path):
+        from gromon.scaffold import risky
+
+        assert risky(Path(tmp_path)) is False
+
+    def test_a_file_that_cannot_be_read_says_so(self, tmp_path):
+        source = Path(tmp_path) / "starter"
+        source.mkdir()
+        locked = source / "locked.txt"
+        locked.write_text("# {name}\n")
+        locked.chmod(0o000)
+
+        finished = run("new", "shop", "--template", str(source), cwd=str(tmp_path))
+        readable = os.access(locked, os.R_OK)
+        locked.chmod(0o644)
+        if readable:
+            pytest.skip("this user can still read a file with permissions removed")
+        assert finished.returncode != 0
+        assert "could not read" in finished.stderr
+        assert "Traceback" not in finished.stderr
+
+    def test_a_local_path_that_is_not_there_is_not_mistaken_for_an_address(self, tmp_path):
+        finished = run("new", "shop", "--template", str(tmp_path / "nope"), cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "no template folder" in finished.stderr
+        assert "unknown url type" not in finished.stderr
+
+    def test_the_drive_root_cannot_be_copied(self, tmp_path):
+        finished = run("new", "shop", "--template", Path.cwd().anchor, cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "too big to be a template" in finished.stderr
+        assert not (Path(tmp_path) / "shop").exists()
+
+
+class TestCls:
+    def test_cls_says_nothing_and_succeeds(self):
+        finished = run("cls")
+        assert finished.returncode == 0, finished.stderr
+        assert finished.stdout.strip() == ""
+
+    def test_cls_is_not_an_unknown_command(self):
+        assert "unknown command" not in run("cls").stderr
 
 
 class TestCreateappSpelling:

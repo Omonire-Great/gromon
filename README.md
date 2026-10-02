@@ -625,6 +625,27 @@ end up copying the new project into itself.
 `.git`, `__pycache__`, `node_modules`, `*.pyc` and similar are left out, so it
 works straight from a git checkout. Binary files are copied untouched.
 
+#### Templates from the internet
+
+A starter does not have to be on your machine. Any of these work:
+
+```bash
+gromon createapp shop --template https://example.com/starter.zip
+gromon createapp shop --template https://cdn.example.com/gromon-starter.tar.gz
+gromon createapp shop --template https://github.com/someone/starter.git
+gromon createapp shop --template someone/starter          # GitHub shorthand
+gromon createapp shop --template git@github.com:someone/starter.git
+```
+
+`.tar.gz`, `.tar`, `.tgz` and `.zip` are all read. If the archive wraps itself
+in one folder, as GitHub downloads do, gromon steps into it, so you get your
+files and not `starter-main/your/files`.
+
+Archives are unpacked into a scratch folder that is thrown away afterwards, and
+one that tries to write outside itself is refused. A local folder always wins
+over the `owner/repo` shorthand, so a folder of that name next to you is used
+as-is.
+
 ## Run it
 
 ```bash
