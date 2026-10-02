@@ -22,6 +22,17 @@ from pathlib import Path
 
 from .errors import HTTPError
 
+# FSCSS has no registered media type, and mimetypes guesses nothing for it, so
+# a stylesheet would reach the browser as application/octet-stream.
+KINDS = {".fscss": "text/fscss"}
+
+
+def kind_of(name, mimetype=None):
+    """The content type for a file name, or None when nothing fits."""
+    if mimetype:
+        return mimetype
+    return KINDS.get(Path(name).suffix.lower()) or guess_type(name)[0]
+
 
 def send_file(path, mimetype=None, conditional=True, download_name=None):
     """Return the value that serves a file, with caching headers.
@@ -36,7 +47,7 @@ def send_file(path, mimetype=None, conditional=True, download_name=None):
         raise HTTPError(404, "Not found")
 
     details = target.stat()
-    kind = mimetype or guess_type(target.name)[0] or "application/octet-stream"
+    kind = kind_of(target.name, mimetype) or "application/octet-stream"
     headers = {
         "ETag": f'"{details.st_mtime_ns:x}-{details.st_size:x}"',
         "Last-Modified": formatdate(details.st_mtime, usegmt=True),

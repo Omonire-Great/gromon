@@ -28,12 +28,13 @@ def echo():
 """
 
 
-def run(*arguments):
+def run(*arguments, cwd=None):
     finished = subprocess.run(
         [sys.executable, "-m", "gromon", *arguments],
         capture_output=True,
         text=True,
         timeout=60,
+        cwd=cwd,
     )
     return finished
 
@@ -167,3 +168,82 @@ class TestMixingAppAndGlobals:
         (Path(tmp_path) / "app.py").write_text(MIXED)
         finished = run("routes", str(tmp_path))
         assert "/mine" in finished.stdout
+
+
+class TestNewProject:
+    def scaffold(self, tmp_path, *arguments):
+        return run("new", *arguments, cwd=str(tmp_path))
+
+    def test_it_writes_a_project_that_runs(self, tmp_path):
+        finished = self.scaffold(tmp_path, "myapp")
+        assert finished.returncode == 0, finished.stderr
+
+        project = Path(tmp_path) / "myapp"
+        for relative in (
+            "app.py",
+            "requirements.txt",
+            "README.md",
+            ".gitignore",
+            "templates/base.html",
+            "templates/index.html",
+            "templates/404.html",
+            "static/site.fscss",
+            "static/app.js",
+        ):
+            assert (project / relative).is_file(), relative
+
+        sys.path.insert(0, str(project))
+        try:
+            module = __import__("app")
+            client = module.app.test_client()
+            assert client.get("/").status_code == 200
+            assert client.get("/api/hello").json == {"hello": "world", "visits": 2}
+        finally:
+            sys.path.remove(str(project))
+            sys.modules.pop("app", None)
+
+    def test_the_page_links_the_stylesheet_and_the_script(self, tmp_path):
+        self.scaffold(tmp_path, "myapp")
+        project = Path(tmp_path) / "myapp"
+        base = (project / "templates" / "base.html").read_text()
+        assert 'type="fscss"' in base
+        assert "site.fscss" in base
+        assert "app.js" in base
+
+    def test_the_stylesheet_is_fscss(self, tmp_path):
+        self.scaffold(tmp_path, "myapp")
+        styles = (Path(tmp_path) / "myapp" / "static" / "site.fscss").read_text()
+        assert "@define card(" in styles
+        # a $variable is only safe as a plain value, never as a @define argument
+        assert "@use(pad)" in styles
+
+    def test_it_refuses_a_folder_with_files_in_it(self, tmp_path):
+        self.scaffold(tmp_path, "myapp")
+        (Path(tmp_path) / "myapp" / "app.py").write_text("# mine\n")
+
+        finished = self.scaffold(tmp_path, "myapp")
+        assert finished.returncode != 0
+        assert "already has files" in finished.stderr
+        assert (Path(tmp_path) / "myapp" / "app.py").read_text() == "# mine\n"
+
+    def test_it_uses_an_empty_folder(self, tmp_path):
+        (Path(tmp_path) / "ready").mkdir()
+        finished = self.scaffold(tmp_path, "ready")
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "ready" / "app.py").is_file()
+
+    def test_it_rejects_a_name_it_could_not_use(self, tmp_path):
+        for name in ("9lives", "my app", "class"):
+            finished = self.scaffold(tmp_path, name)
+            assert finished.returncode != 0, name
+            assert not (Path(tmp_path) / name).exists(), name
+
+    def test_it_needs_a_name(self, tmp_path):
+        finished = self.scaffold(tmp_path)
+        assert finished.returncode != 0
+        assert "needs a project name" in finished.stderr
+
+    def test_it_prints_the_next_steps(self, tmp_path):
+        finished = self.scaffold(tmp_path, "myapp")
+        assert "pip install -r requirements.txt" in finished.stdout
+        assert "gromon run myapp" in finished.stdout

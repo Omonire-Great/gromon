@@ -17,6 +17,7 @@ from pathlib import Path
 USAGE = """gromon - build Python applications with less code
 
 usage:
+  gromon new <name>                      start a project
   gromon run [options] <file.py|folder>   run it, reloading on changes
   gromon routes <file.py|folder>          print the routes an app has
 
@@ -133,6 +134,20 @@ def resolve(path):
     return path / "app.py" if path.is_dir() else path
 
 
+def start_project(name):
+    """Write a starter project: `gromon new myapp`."""
+    from .scaffold import create, next_steps
+
+    if name is None:
+        sys.exit(f"gromon: new needs a project name\n\n{USAGE}")
+    try:
+        written = create(name)
+    except ValueError as problem:
+        sys.exit(f"gromon: {problem}")
+
+    print(f"Created {name}/ with {len(written)} files.{next_steps(name)}")
+
+
 def main(argv=None):
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments or arguments[0] in ("-h", "--help"):
@@ -140,6 +155,9 @@ def main(argv=None):
         return
 
     command = arguments.pop(0)
+    if command == "new":
+        start_project(arguments[0] if arguments else None)
+        return
     if command not in ("run", "_serve", "routes"):
         sys.exit(f"gromon: unknown command\n\n{USAGE}")
 

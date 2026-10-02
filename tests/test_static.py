@@ -29,6 +29,14 @@ def test_static_file_is_served(application, files):
     assert "ETag" in headers and "Last-Modified" in headers
 
 
+def test_an_fscss_stylesheet_is_not_served_as_a_download(application, files):
+    (files / "site.fscss").write_text("$ink: #0f172a;")
+    application.static(files)
+    status, kind, body, _ = application.handle(get("/static/site.fscss"))
+    assert (status, kind) == (200, "text/fscss")
+    assert body == b"$ink: #0f172a;"
+
+
 def test_static_answers_304_when_the_copy_is_fresh(application, files):
     application.static(files)
     _, _, _, headers = application.handle(get("/static/site.css"))

@@ -57,6 +57,9 @@ class Client:
             path = f"{path}{'&' if '?' in path else '?'}{urlencode(query)}"
 
         headers = dict(headers or {})
+        # HTTP/1.1 requires Host on every request, and without it TRUSTED_HOSTS
+        # rejects the call as 400 even though a real client would have sent one.
+        headers.setdefault("Host", "127.0.0.1")
         if json is not None:
             from json import dumps
 

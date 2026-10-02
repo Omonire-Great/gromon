@@ -96,6 +96,45 @@ class TestBasics:
         assert repr(client.get("/")) == "<Response 200>"
 
 
+class TestTrustedHosts:
+    def test_a_request_carries_a_host_so_the_guard_accepts_it(self):
+        from gromon.app import App
+
+        guarded = App()
+        guarded.config["TRUSTED_HOSTS"] = ["127.0.0.1", "localhost"]
+
+        @guarded.route("/")
+        def home():
+            return "home"
+
+        assert guarded.test_client().get("/").status_code == 200
+
+    def test_a_host_outside_the_list_is_still_refused(self):
+        from gromon.app import App
+
+        guarded = App()
+        guarded.config["TRUSTED_HOSTS"] = ["example.com"]
+
+        @guarded.route("/")
+        def home():
+            return "home"
+
+        assert guarded.test_client().get("/").status_code == 400
+
+    def test_the_host_can_be_set_by_hand(self):
+        from gromon.app import App
+
+        guarded = App()
+        guarded.config["TRUSTED_HOSTS"] = ["example.com"]
+
+        @guarded.route("/")
+        def home():
+            return "home"
+
+        response = guarded.test_client().get("/", headers={"Host": "example.com"})
+        assert response.status_code == 200
+
+
 class TestMethods:
     def test_post_sends_json(self, client):
         response = client.post("/echo", data='{"a": 1}')
