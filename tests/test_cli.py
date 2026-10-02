@@ -127,8 +127,9 @@ class TestAnAppSplitOverFiles:
 
     def test_the_starter_example_imports_too(self):
         # examples/starter is our scratch app: it is not published, so it is
-        # only here when we are working locally.
-        if not Path("examples/starter").is_dir():
+        # only here when we are working locally, and an emptied one is skipped
+        # rather than failing the suite.
+        if not Path("examples/starter/app.py").is_file():
             pytest.skip("examples/starter is not part of the published repo")
         finished = run("routes", "examples/starter")
         assert finished.returncode == 0, finished.stderr
@@ -402,6 +403,32 @@ class TestTemplateOptionSpelling:
         finished = run("new", "--t", str(source), "shop", cwd=str(tmp_path))
         assert finished.returncode == 0, finished.stderr
         assert (Path(tmp_path) / "shop" / "app.py").is_file()
+
+
+class TestEmptyTemplate:
+    def test_an_empty_template_folder_says_so(self, tmp_path):
+        source = Path(tmp_path) / "starter"
+        source.mkdir()
+
+        finished = run("new", "shop", "--template", str(source), cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "no files in the template folder" in finished.stderr
+        assert "Traceback" not in finished.stderr
+
+    def test_a_template_of_only_junk_is_treated_as_empty(self, tmp_path):
+        source = Path(tmp_path) / "starter"
+        (source / "__pycache__").mkdir(parents=True)
+        (source / "__pycache__" / "stale.pyc").write_bytes(b"\x00")
+
+        finished = run("new", "shop", "--template", str(source), cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "no files in the template folder" in finished.stderr
+
+    def test_an_empty_dot_template_does_not_crash(self, tmp_path):
+        finished = run("createapp", "shop", "--template", ".", cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "no files in the template folder" in finished.stderr
+        assert "IndexError" not in finished.stderr
 
 
 class TestCreateappSpelling:

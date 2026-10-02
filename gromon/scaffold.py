@@ -320,6 +320,9 @@ def from_folder(name, root, source):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(fill(item.read_bytes(), name))
         written.append(target)
+
+    if not written:
+        raise ValueError(f"no files in the template folder {source}")
     return written
 
 
@@ -346,9 +349,8 @@ def fill(content, name):
     return text.replace("{name}", name).encode("utf-8")
 
 
-def next_steps(written):
+def next_steps(root):
     """What to tell someone who just scaffolded a project."""
-    root = written[0].parent
     install = (
         "  pip install -r requirements.txt"
         if (root / "requirements.txt").is_file()

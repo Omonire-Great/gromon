@@ -172,7 +172,7 @@ def start_project(arguments):
         sys.exit(f"gromon: {problem}")
 
     from_folder = f" from {template}" if template else ""
-    print(f"Created {name}/{from_folder} with {len(written)} files.{next_steps(written)}")
+    print(f"Created {name}/{from_folder} with {len(written)} files.{next_steps(Path(name))}")
 
 
 def main(argv=None):
