@@ -66,7 +66,7 @@ BASE = """<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
     <link type="fscss" rel="stylesheet" href="{{ url_for('serve', path='site.fscss') }}">
-    <script src="https://cdn.jsdelivr.net/npm/fscss@1.2.1/runtime.min.js" async></script>
+    <script src="{{ url_for('serve', path='fscss.min.js') }}" async></script>
   </head>
   <body>
     <div class="shell">
@@ -178,21 +178,25 @@ Then open http://127.0.0.1:8000/
     templates/index.html the page at /
     static/site.fscss    styles, in FSCSS
     static/app.js        talks to /api/hello
+    static/fscss.min.js  the FSCSS compiler, served from your own app
 
 ## Styles
 
 `static/site.fscss` is [FSCSS](https://fscss.devtem.org/), which compiles to
-plain CSS. The page loads a small runtime that compiles it in the browser, so
-there is no build step while you work.
+plain CSS. `static/fscss.min.js` compiles it in the browser, so edits show up on
+a refresh and there is no build step. Both files are served by your own app, so
+this works offline and does not need npm.
 
-To ship plain CSS instead, install the compiler and compile once:
+To ship plain CSS instead, compile it once and point the link in `base.html` at
+the result. That step does need npm:
 
     npm install -g fscss
     fscss static/site.fscss static/site.css
 
-Then point the `site.fscss` link at `site.css`. Two FSCSS notes: `$name`
-variables work anywhere, and an `@define` block reads its arguments with
-`@use(name)`, so pass it plain values rather than `$variables`.
+Two FSCSS notes: `$name` variables work anywhere, and an `@define` block reads
+its arguments with `@use(name)`, so pass it plain values rather than `$variables`.
+`static/fscss.min.js` is FSCSS 1.2.1 (MIT), from
+https://cdn.jsdelivr.net/npm/fscss@1.2.1/runtime.min.js
 """
 
 IGNORE = """__pycache__/
@@ -219,6 +223,8 @@ FILES = {
     "requirements.txt": REQUIREMENTS,
 }
 
+# What a project gets: the nine files above, plus the runtime next to them.
+
 
 def unusable(name):
     """Why this cannot be a folder name, or None when it is fine."""
@@ -227,6 +233,16 @@ def unusable(name):
     if keyword.iskeyword(name):
         return f"{name} is a Python keyword"
     return None
+
+
+def compiler():
+    """The FSCSS runtime that compiles a .fscss stylesheet in the browser.
+
+    Copied into each project rather than pulled from a CDN, so a scaffolded app
+    styles itself offline. FSCSS 1.2.1, MIT, from
+    https://cdn.jsdelivr.net/npm/fscss@1.2.1/runtime.min.js
+    """
+    return Path(__file__).parent / "assets" / "fscss-runtime.min.js"
 
 
 def create(name):
@@ -249,6 +265,10 @@ def create(name):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(template.replace("{name}", name), encoding="utf-8")
         written.append(target)
+
+    runtime = root / "static" / "fscss.min.js"
+    runtime.write_bytes(compiler().read_bytes())
+    written.append(runtime)
     return written
 
 

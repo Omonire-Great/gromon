@@ -563,7 +563,7 @@ pip install -r requirements.txt
 gromon run myapp
 ```
 
-Then open http://127.0.0.1:8000/ It writes nine files that work together:
+Then open http://127.0.0.1:8000/ It writes ten files that work together:
 
 ```
 app.py                 routes, the App object, one JSON endpoint
@@ -572,13 +572,17 @@ templates/index.html   the page at /
 templates/404.html     what an unknown path answers
 static/site.fscss      styles, in FSCSS
 static/app.js          calls /api/hello when you click
+static/fscss.min.js    the FSCSS compiler, served by your own app
 README.md  requirements.txt  .gitignore
 ```
 
-Styles are [FSCSS](https://fscss.devtem.org/), which compiles to plain CSS. The
-page loads a small runtime that compiles it in the browser, so there is no build
-step while you work. To ship plain CSS, compile it once and point the link at the
-result:
+Styles are [FSCSS](https://fscss.devtem.org/), which compiles to plain CSS.
+`static/fscss.min.js` does that in the browser, so edits show up on a refresh
+and there is no build step. Because your own app serves it, a scaffolded project
+needs neither npm nor a network connection.
+
+To ship plain CSS, compile it once and point the link in `base.html` at the
+result. That step does need npm:
 
 ```bash
 npm install -g fscss

@@ -189,6 +189,7 @@ class TestNewProject:
             "templates/404.html",
             "static/site.fscss",
             "static/app.js",
+            "static/fscss.min.js",
         ):
             assert (project / relative).is_file(), relative
 
@@ -209,6 +210,27 @@ class TestNewProject:
         assert 'type="fscss"' in base
         assert "site.fscss" in base
         assert "app.js" in base
+
+    def test_the_compiler_is_served_by_the_app_not_a_cdn(self, tmp_path):
+        self.scaffold(tmp_path, "myapp")
+        project = Path(tmp_path) / "myapp"
+
+        base = (project / "templates" / "base.html").read_text()
+        assert "fscss.min.js" in base
+        assert "cdn.jsdelivr.net" not in base
+
+        runtime = project / "static" / "fscss.min.js"
+        assert runtime.stat().st_size > 1000
+
+        sys.path.insert(0, str(project))
+        try:
+            module = __import__("app")
+            served = module.app.test_client().get("/static/fscss.min.js")
+            assert served.status_code == 200
+            assert served.get_header("Content-Type") == "text/javascript"
+        finally:
+            sys.path.remove(str(project))
+            sys.modules.pop("app", None)
 
     def test_the_stylesheet_is_fscss(self, tmp_path):
         self.scaffold(tmp_path, "myapp")

@@ -38,6 +38,9 @@ gromon = "gromon.cli:main"
 [tool.setuptools]
 packages = ["gromon"]
 
+[tool.setuptools.package-data]
+gromon = ["assets/*.js"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
