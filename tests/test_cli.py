@@ -369,6 +369,41 @@ class TestNewProjectFromATemplate:
         assert "already has files" in finished.stderr
 
 
+class TestTemplateOptionSpelling:
+    def test_a_single_dash_t_is_the_same_flag(self, tmp_path):
+        source = Path(tmp_path) / "starter"
+        source.mkdir()
+        (source / "app.py").write_text("# {name}\n")
+
+        finished = run("new", "shop", "--t", str(source), cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "app.py").is_file()
+
+    def test_the_template_can_be_written_with_an_equals_sign(self, tmp_path):
+        source = Path(tmp_path) / "starter"
+        source.mkdir()
+        (source / "app.py").write_text("# {name}\n")
+
+        finished = run("new", "shop", f"--template={source}", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "app.py").is_file()
+
+    def test_an_unknown_option_says_so_rather_than_reading_as_a_name(self, tmp_path):
+        finished = run("new", "shop", "--tempo", ".", cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "unknown option --tempo" in finished.stderr
+        assert not (Path(tmp_path) / "shop").exists()
+
+    def test_the_name_may_come_before_or_after_the_option(self, tmp_path):
+        source = Path(tmp_path) / "starter"
+        source.mkdir()
+        (source / "app.py").write_text("# {name}\n")
+
+        finished = run("new", "--t", str(source), "shop", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "app.py").is_file()
+
+
 class TestCreateappSpelling:
     def test_createapp_scaffolds_like_new(self, tmp_path):
         finished = run("createapp", "shop", cwd=str(tmp_path))

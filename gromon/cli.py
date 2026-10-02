@@ -149,10 +149,14 @@ def start_project(arguments):
 
     template, names, pending = None, [], iter(arguments)
     for argument in pending:
-        if argument == "--template":
+        if argument in ("--template", "--t"):
             template = next(pending, None)
             if template is None:
                 sys.exit(f"gromon: --template needs a folder\n\n{USAGE}")
+        elif argument.startswith("--template="):
+            template = argument.split("=", 1)[1]
+        elif argument.startswith("-"):
+            sys.exit(f"gromon: unknown option {argument}\n\n{USAGE}")
         else:
             names.append(argument)
 
