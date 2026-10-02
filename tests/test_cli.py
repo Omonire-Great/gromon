@@ -2,6 +2,9 @@
 
 import subprocess
 import sys
+from pathlib import Path
+
+import pytest
 
 APP = """
 from gromon import App
@@ -122,6 +125,10 @@ class TestAnAppSplitOverFiles:
         assert finished.returncode == 0, finished.stderr
 
     def test_the_starter_example_imports_too(self):
+        # examples/starter is our scratch app: it is not published, so it is
+        # only here when we are working locally.
+        if not Path("examples/starter").is_dir():
+            pytest.skip("examples/starter is not part of the published repo")
         finished = run("routes", "examples/starter")
         assert finished.returncode == 0, finished.stderr
         assert "/posts/<int:id>" in finished.stdout

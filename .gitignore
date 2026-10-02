@@ -17,6 +17,9 @@ htmlcov/
 .venv/
 venv/
 
+# Our scratch app: kept here while we try things out, never published.
+examples/starter/
+
 # Editors and OS
 .vscode/
 .idea/

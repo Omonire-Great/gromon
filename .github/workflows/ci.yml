@@ -37,7 +37,8 @@ jobs:
       - name: The examples still run
         run: |
           gromon routes examples/blog
-          gromon routes examples/starter
+          gromon routes examples/hello.py
+          gromon routes examples/chat.py
 
   # The core claims to need nothing from PyPI. This job proves it by never
   # installing the extras and running everything that does not touch Jinja2.
