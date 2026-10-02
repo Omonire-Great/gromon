@@ -53,9 +53,7 @@ def snapshot(folder):
 
 def run_file(path, host="127.0.0.1", port=8000, reload=True):
     """Run path as __main__ and block."""
-    path = Path(path).resolve()
-    if path.is_dir():
-        path = path / "app.py"
+    path = resolve(path)
     if not path.is_file():
         sys.exit(f"gromon: no such file: {path}")
 
@@ -146,9 +144,25 @@ def show_routes(path):
 
 
 def resolve(path):
-    """A folder means the app.py inside it."""
+    """A folder means the app.py inside it, and says so when there isn't one."""
     path = Path(path).resolve()
-    return path / "app.py" if path.is_dir() else path
+    if not path.is_dir():
+        return path
+
+    if (path / "app.py").is_file():
+        return path / "app.py"
+
+    if (path / "pyproject.toml").is_file() or (path / "setup.py").is_file():
+        sys.exit(
+            f"gromon: {path} has no app.py\n"
+            "That looks like a library rather than an app. A template needs an app.py"
+            " to run."
+        )
+
+    others = sorted(item.name for item in path.glob("*.py"))
+    if others:
+        sys.exit(f"gromon: {path} has no app.py\nIt has {', '.join(others)}. Try one of those.")
+    sys.exit(f"gromon: {path} has no app.py and no .py files\nNothing here to run.")
 
 
 def start_project(arguments):
@@ -211,7 +225,10 @@ def main(argv=None):
             files.append(argument)
 
     if not files:
-        sys.exit(f"gromon: {command} needs a file\n\n{USAGE}")
+        if command in ("run", "_serve") and (Path.cwd() / "app.py").is_file():
+            files.append(".")
+        else:
+            sys.exit(f"gromon: {command} needs a file\n\n{USAGE}")
 
     if command == "routes":
         show_routes(files[0])

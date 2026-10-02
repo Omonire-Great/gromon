@@ -1,9 +1,12 @@
 """The command line: run, reload, and the routes table."""
 
 import os
+import socket
 import subprocess
 import sys
 import tarfile
+import time
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -432,6 +435,173 @@ class TestEmptyTemplate:
         assert finished.returncode != 0
         assert "no files in the template folder" in finished.stderr
         assert "IndexError" not in finished.stderr
+
+
+def serving(folder, name, tries=60):
+    """Start `gromon run name` for real and return the status it answers with.
+
+    The test apps here deliberately have no `app.run()`, so importing one proves
+    nothing about the server. This actually boots it and asks it a question.
+    """
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    child = subprocess.Popen(
+        [sys.executable, "-m", "gromon", "run", name, "--no-reload", "--port", str(port)],
+        cwd=str(folder),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        for _ in range(tries):
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1) as reply:
+                    return reply.status
+            except OSError:
+                if child.poll() is not None:
+                    pytest.fail(f"the server stopped early: {child.communicate()[0]}")
+                time.sleep(0.25)
+        pytest.fail(f"the server never answered on port {port}")
+    finally:
+        child.terminate()
+        child.wait(timeout=10)
+
+
+class TestAnEntryPointIsAlwaysThere:
+    def library(self, tmp_path):
+        source = Path(tmp_path) / "lib"
+        (source / "pkg").mkdir(parents=True)
+        (source / "pyproject.toml").write_text("[project]\nname = 'thing'\n")
+        (source / "pkg" / "__init__.py").write_text("VALUE = 1\n")
+        return source
+
+    def test_a_template_with_no_app_py_gets_one(self, tmp_path):
+        source = self.library(tmp_path)
+        finished = run("new", "shop", "--template", str(source), cwd=str(tmp_path))
+
+        assert finished.returncode == 0, finished.stderr
+        app = Path(tmp_path) / "shop" / "app.py"
+        assert app.is_file()
+        assert "shop" in app.read_text()
+
+    def test_that_app_py_has_a_route(self, tmp_path):
+        source = self.library(tmp_path)
+        run("new", "shop", "--template", str(source), cwd=str(tmp_path))
+
+        finished = run("routes", "shop", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert "/" in finished.stdout
+        assert "/api/hello" in finished.stdout
+
+    def test_that_app_py_actually_starts_the_server(self, tmp_path):
+        source = self.library(tmp_path)
+        run("new", "shop", "--template", str(source), cwd=str(tmp_path))
+        assert serving(tmp_path, "shop") == 200
+
+    def test_a_template_with_its_own_app_py_is_left_alone(self, tmp_path):
+        source = self.library(tmp_path)
+        (source / "app.py").write_text("# mine, {name}\n")
+
+        run("new", "shop", "--template", str(source), cwd=str(tmp_path))
+        assert (Path(tmp_path) / "shop" / "app.py").read_text() == "# mine, shop\n"
+
+    def test_the_written_app_py_answers_requests(self, tmp_path):
+        source = self.library(tmp_path)
+        run("new", "shop", "--template", str(source), cwd=str(tmp_path))
+
+        script = (
+            "import runpy\n"
+            "built = runpy.run_path('shop/app.py')['app']\n"
+            "print(built.test_client().get('/').json)\n"
+        )
+        finished = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+        )
+        assert finished.returncode == 0, finished.stderr
+        assert "shop" in finished.stdout
+
+    def test_the_built_in_starter_serves_too(self, tmp_path):
+        run("new", "shop", cwd=str(tmp_path))
+        assert serving(tmp_path, "shop") == 200
+
+    def test_the_built_in_starter_does_not_gain_a_second_app_py(self, tmp_path):
+        finished = run("new", "shop", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert (Path(tmp_path) / "shop" / "app.py").is_file()
+        assert "app.run()" in (Path(tmp_path) / "shop" / "app.py").read_text()
+
+
+class TestRunningAFolderThatIsNotAnApp:
+    def make(self, tmp_path, name="shop"):
+        folder = Path(tmp_path) / name
+        folder.mkdir()
+        return folder
+
+    def test_a_library_folder_says_it_looks_like_a_library(self, tmp_path):
+        folder = self.make(tmp_path)
+        (folder / "pyproject.toml").write_text("[project]\nname = 'thing'\n")
+
+        finished = run("run", "--no-reload", "shop", cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "has no app.py" in finished.stderr
+        assert "library rather than an app" in finished.stderr
+        assert "Traceback" not in finished.stderr
+
+    def test_a_folder_with_other_python_files_lists_them(self, tmp_path):
+        folder = self.make(tmp_path)
+        (folder / "main.py").write_text("print('hi')\n")
+        (folder / "server.py").write_text("print('hi')\n")
+
+        finished = run("run", "--no-reload", "shop", cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "main.py, server.py" in finished.stderr
+
+    def test_an_empty_folder_says_there_is_nothing_to_run(self, tmp_path):
+        self.make(tmp_path)
+        finished = run("run", "--no-reload", "shop", cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "no .py files" in finished.stderr
+
+    def test_routes_gives_the_same_explanation(self, tmp_path):
+        folder = self.make(tmp_path)
+        (folder / "pyproject.toml").write_text("[project]\n")
+
+        finished = run("routes", "shop", cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "library rather than an app" in finished.stderr
+
+    def test_a_folder_with_app_py_still_works(self, tmp_path):
+        folder = self.make(tmp_path)
+        (folder / "app.py").write_text(APP)
+        (folder / "requirements.txt").write_text("gromon\n")
+
+        finished = run("run", "--no-reload", "shop", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+
+
+class TestRunWithoutAFile:
+    def test_it_finds_the_app_you_are_standing_in(self, tmp_path):
+        (Path(tmp_path) / "app.py").write_text(APP)
+        (Path(tmp_path) / "requirements.txt").write_text("gromon\n")
+
+        finished = run("run", "--no-reload", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+
+    def test_it_still_needs_a_file_when_there_is_no_app(self, tmp_path):
+        finished = run("run", "--no-reload", cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "needs a file" in finished.stderr
+
+    def test_routes_still_needs_a_file(self, tmp_path):
+        (Path(tmp_path) / "app.py").write_text(APP)
+        finished = run("routes", cwd=str(tmp_path))
+        assert finished.returncode != 0
+        assert "needs a file" in finished.stderr
 
 
 class TestOnlineTemplate:

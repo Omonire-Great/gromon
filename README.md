@@ -646,6 +646,22 @@ one that tries to write outside itself is refused. A local folder always wins
 over the `owner/repo` shorthand, so a folder of that name next to you is used
 as-is.
 
+#### app.py is always there
+
+A template that brings its own `app.py` is left alone. A template with none —
+a library, a folder of helpers, a repo that is not an app — gets one written
+for it, with a route at `/` and one at `/api/hello`, and an `app.run()` so the
+server starts straight away:
+
+```bash
+gromon createapp shop --template ./some-library
+cd shop
+gromon run shop          # answers on http://127.0.0.1:8000/
+```
+
+The file says at the top that it was written for you, so it is obvious it is
+yours to change.
+
 ## Run it
 
 ```bash

@@ -256,6 +256,37 @@ FILES = {
 # What a project gets: the nine files above, plus the runtime next to them.
 
 
+ENTRY = '''"""{name} - a Gromon app.
+
+    gromon run {name}
+
+Then open http://127.0.0.1:8000/
+
+The template had no app.py, so this one was written to give you somewhere to
+start. Put your routes in it, and delete what you do not need.
+"""
+
+from gromon import App
+
+app = App()
+app.config["TRUSTED_HOSTS"] = ["127.0.0.1", "localhost", "testserver"]
+
+
+@app.route("/")
+def home():
+    return {{"hello": "{name}"}}
+
+
+@app.route("/api/hello")
+def hello():
+    return {{"hello": "world"}}
+
+
+if __name__ == "__main__":
+    app.run()
+'''
+
+
 def unusable(name):
     """Why this cannot be a folder name, or None when it is fine."""
     if not name or not NAME.fullmatch(name):
@@ -300,13 +331,23 @@ def create(name, template=None):
         source = Path(template)
         if risky(source):
             raise ValueError(f"{source} is too big to be a template, copy the part you want")
-        return from_folder(name, root, source)
-
-    if not online(template):
+        written = from_folder(name, root, source)
+    elif not online(template):
         raise ValueError(f"no template folder at {template}")
+    else:
+        with fetched(template) as folder:
+            written = from_folder(name, root, topmost(folder))
 
-    with fetched(template) as folder:
-        return from_folder(name, root, topmost(folder))
+    return written + entry(name, root)
+
+
+def entry(name, root):
+    """A starting app.py for a template that did not bring one."""
+    target = root / "app.py"
+    if target.is_file():
+        return []
+    target.write_text(ENTRY.format(name=name), encoding="utf-8")
+    return [target]
 
 
 def online(template):
