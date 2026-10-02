@@ -9,6 +9,8 @@
     run()
 """
 
+from importlib import metadata as _metadata
+
 from . import auth, limiter, payment
 from .app import (
     App,
@@ -37,6 +39,11 @@ from .http import Request
 from .response import JSON
 from .views import MethodView
 
+try:
+    __version__ = _metadata.version("gromon")
+except _metadata.PackageNotFoundError:
+    __version__ = "0.0.0"
+
 __all__ = [
     "JSON",
     "App",
@@ -45,6 +52,7 @@ __all__ = [
     "HTTPError",
     "MethodView",
     "Request",
+    "__version__",
     "abort",
     "after",
     "auth",

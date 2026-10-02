@@ -17,13 +17,20 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+"Programming Language :: Python :: 3.12",
+"Programming Language :: Python :: 3.13",
+"Programming Language :: Python :: 3.14",
+"Topic :: Internet :: WWW/HTTP :: Dynamic Content",
 ]
 
 [project.optional-dependencies]
 templates = ["jinja2>=3"]
 dev = ["pytest", "ruff", "jinja2>=3"]
+
+[project.urls]
+Homepage = "https://github.com/Omonire-Great/gromon"
+Source = "https://github.com/Omonire-Great/gromon"
+Issues = "https://github.com/Omonire-Great/gromon/issues"
 
 [project.scripts]
 gromon = "gromon.cli:main"
