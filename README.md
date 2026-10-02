@@ -589,6 +589,29 @@ npm install -g fscss
 fscss static/site.fscss static/site.css
 ```
 
+### Your own starter
+
+A template is just a folder, so a team can keep its shape in git and scaffold
+from that instead of the built-in one:
+
+```bash
+gromon new shop --template ./gromon-starter
+```
+
+The folder becomes the project. It **replaces** the built-in starter rather than
+adding to it, so your template decides everything. Every `{name}` in a file, or
+in a path, becomes the project name:
+
+```
+gromon-starter/
+  app.py                     """A {name} starter."""
+  README.md                  # {name}
+  api/{name}/__init__.py     NAME = "{name}"
+```
+
+`.git`, `__pycache__`, `node_modules`, `*.pyc` and similar are left out, so it
+works straight from a git checkout. Binary files are copied untouched.
+
 ## Run it
 
 ```bash

@@ -269,3 +269,101 @@ class TestNewProject:
         finished = self.scaffold(tmp_path, "myapp")
         assert "pip install -r requirements.txt" in finished.stdout
         assert "gromon run myapp" in finished.stdout
+
+
+class TestNewProjectFromATemplate:
+    def template(self, tmp_path):
+        source = Path(tmp_path) / "starter"
+        (source / "api" / "{name}").mkdir(parents=True)
+        (source / "tests").mkdir()
+        (source / "app.py").write_text('"""A {name} starter."""\n')
+        (source / "README.md").write_text("# {name}\n")
+        (source / "api" / "{name}" / "__init__.py").write_text('NAME = "{name}"\n')
+        (source / "tests" / "test_it.py").write_text("def test_it():\n    assert True\n")
+        return source
+
+    def start(self, tmp_path, *arguments):
+        return run("new", *arguments, cwd=str(tmp_path))
+
+    def test_the_template_becomes_the_project(self, tmp_path):
+        source = self.template(tmp_path)
+        finished = self.start(tmp_path, "shop", "--template", str(source))
+        assert finished.returncode == 0, finished.stderr
+
+        project = Path(tmp_path) / "shop"
+        assert (project / "app.py").is_file()
+        assert (project / "README.md").is_file()
+        assert (project / "tests" / "test_it.py").is_file()
+
+    def test_it_replaces_the_built_in_starter_rather_than_adding_to_it(self, tmp_path):
+        source = self.template(tmp_path)
+        self.start(tmp_path, "shop", "--template", str(source))
+
+        project = Path(tmp_path) / "shop"
+        assert not (project / "templates").exists()
+        assert not (project / "static").exists()
+        assert not (project / "requirements.txt").exists()
+
+    def test_the_project_name_is_filled_in_files_and_paths(self, tmp_path):
+        source = self.template(tmp_path)
+        self.start(tmp_path, "shop", "--template", str(source))
+
+        project = Path(tmp_path) / "shop"
+        assert (project / "api" / "shop" / "__init__.py").is_file()
+        assert 'NAME = "shop"' in (project / "api" / "shop" / "__init__.py").read_text()
+        assert "shop" in (project / "README.md").read_text()
+        assert "{name}" not in (project / "README.md").read_text()
+
+    def test_it_leaves_out_junk_a_git_checkout_carries(self, tmp_path):
+        source = self.template(tmp_path)
+        (source / ".git").mkdir()
+        (source / ".git" / "config").write_text("[core]\n")
+        (source / "__pycache__").mkdir()
+        (source / "__pycache__" / "stale.pyc").write_bytes(b"\x00stale")
+        (source / "notes.pyc").write_bytes(b"\x00")
+
+        self.start(tmp_path, "shop", "--template", str(source))
+
+        project = Path(tmp_path) / "shop"
+        assert not (project / ".git").exists()
+        assert not (project / "__pycache__").exists()
+        assert not (project / "notes.pyc").exists()
+
+    def test_a_binary_file_is_copied_as_it_is(self, tmp_path):
+        source = self.template(tmp_path)
+        original = bytes([0, 1, 2, 255, 254, 66])
+        (source / "logo.bin").write_bytes(original)
+
+        self.start(tmp_path, "shop", "--template", str(source))
+        assert (Path(tmp_path) / "shop" / "logo.bin").read_bytes() == original
+
+    def test_the_next_steps_do_not_mention_a_file_it_did_not_write(self, tmp_path):
+        source = self.template(tmp_path)
+        finished = self.start(tmp_path, "shop", "--template", str(source))
+        assert "requirements.txt" not in finished.stdout
+        assert "pip install gromon" in finished.stdout
+
+    def test_a_missing_template_folder_says_so(self, tmp_path):
+        finished = self.start(tmp_path, "shop", "--template", str(tmp_path / "nope"))
+        assert finished.returncode != 0
+        assert "no template folder" in finished.stderr
+        assert not (Path(tmp_path) / "shop").exists()
+
+    def test_template_without_a_folder_says_so(self, tmp_path):
+        finished = self.start(tmp_path, "shop", "--template")
+        assert finished.returncode != 0
+        assert "--template needs a folder" in finished.stderr
+
+    def test_two_names_are_refused(self, tmp_path):
+        finished = self.start(tmp_path, "one", "two")
+        assert finished.returncode != 0
+        assert "one project name" in finished.stderr
+
+    def test_it_still_guards_the_target_folder(self, tmp_path):
+        source = self.template(tmp_path)
+        self.start(tmp_path, "shop", "--template", str(source))
+        (Path(tmp_path) / "shop" / "app.py").write_text("# mine\n")
+
+        finished = self.start(tmp_path, "shop", "--template", str(source))
+        assert finished.returncode != 0
+        assert "already has files" in finished.stderr

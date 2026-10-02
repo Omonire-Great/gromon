@@ -17,15 +17,21 @@ from pathlib import Path
 USAGE = """gromon - build Python applications with less code
 
 usage:
-  gromon new <name>                      start a project
+  gromon new [--template FOLDER] <name>    start a project
   gromon run [options] <file.py|folder>   run it, reloading on changes
   gromon routes <file.py|folder>          print the routes an app has
 
 options:
-  --host HOST     address to bind          (default 127.0.0.1)
-  --port PORT     port to bind             (default 8000)
-  --no-reload     do not watch for changes
-  -h, --help      show this message
+  --template FOLDER  copy this folder instead of the built-in starter
+  --host HOST        address to bind          (default 127.0.0.1)
+  --port PORT        port to bind             (default 8000)
+  --no-reload        do not watch for changes
+  -h, --help         show this message
+
+A template folder is a starter kept in git. Every {name} in a file, or in a
+path, becomes the project name:
+
+    gromon new shop --template ./gromon-starter
 """
 
 
@@ -134,18 +140,32 @@ def resolve(path):
     return path / "app.py" if path.is_dir() else path
 
 
-def start_project(name):
+def start_project(arguments):
     """Write a starter project: `gromon new myapp`."""
     from .scaffold import create, next_steps
 
-    if name is None:
+    template, names, pending = None, [], iter(arguments)
+    for argument in pending:
+        if argument == "--template":
+            template = next(pending, None)
+            if template is None:
+                sys.exit(f"gromon: --template needs a folder\n\n{USAGE}")
+        else:
+            names.append(argument)
+
+    if not names:
         sys.exit(f"gromon: new needs a project name\n\n{USAGE}")
+    if len(names) > 1:
+        sys.exit(f"gromon: new takes one project name\n\n{USAGE}")
+
+    name = names[0]
     try:
-        written = create(name)
+        written = create(name, template)
     except ValueError as problem:
         sys.exit(f"gromon: {problem}")
 
-    print(f"Created {name}/ with {len(written)} files.{next_steps(name)}")
+    from_folder = f" from {template}" if template else ""
+    print(f"Created {name}/{from_folder} with {len(written)} files.{next_steps(written)}")
 
 
 def main(argv=None):
@@ -156,7 +176,7 @@ def main(argv=None):
 
     command = arguments.pop(0)
     if command == "new":
-        start_project(arguments[0] if arguments else None)
+        start_project(arguments)
         return
     if command not in ("run", "_serve", "routes"):
         sys.exit(f"gromon: unknown command\n\n{USAGE}")

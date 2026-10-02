@@ -11,6 +11,25 @@ from pathlib import Path
 
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9._-]*")
 
+# A template is usually a git checkout, so these are never part of the project.
+SKIP = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".idea",
+    ".vscode",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "node_modules",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    "dist",
+    "build",
+    ".DS_Store",
+}
+
 APP = '''"""{name} - a Gromon app.
 
     gromon run {name}
@@ -245,11 +264,13 @@ def compiler():
     return Path(__file__).parent / "assets" / "fscss-runtime.min.js"
 
 
-def create(name):
+def create(name, template=None):
     """Write a starter project into a folder named after it.
 
-    An empty folder is fine to use, one with files in it is not: overwriting
-    someone's work is not a default anybody wants.
+    `template` is a folder to copy instead of the built-in starter, so a team can
+    keep its own shape in git and scaffold from that. An empty target folder is
+    fine to use, one with files in it is not: overwriting someone's work is not a
+    default anybody wants.
     """
     problem = unusable(name)
     if problem:
@@ -259,6 +280,11 @@ def create(name):
     if root.exists() and any(root.iterdir()):
         raise ValueError(f"{name} already has files in it")
 
+    return from_folder(name, root, Path(template)) if template else builtin(name, root)
+
+
+def builtin(name, root):
+    """The starter Gromon ships with."""
     written = []
     for relative, template in FILES.items():
         target = root / relative
@@ -272,11 +298,51 @@ def create(name):
     return written
 
 
-def next_steps(name):
+def from_folder(name, root, source):
+    """Copy a template folder into a project, filling in {name}."""
+    if not source.is_dir():
+        raise ValueError(f"no template folder at {source}")
+
+    written = []
+    for item in sorted(source.rglob("*")):
+        relative = item.relative_to(source)
+        if ignored(relative):
+            continue
+
+        target = root / str(relative).replace("{name}", name)
+        if item.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(fill(item.read_bytes(), name))
+        written.append(target)
+    return written
+
+
+def ignored(relative):
+    """True for the parts of a template nobody means to copy."""
+    parts = relative.parts
+    if SKIP.intersection(parts):
+        return True
+    return relative.name.endswith((".pyc", ".pyo", ".swp"))
+
+
+def fill(content, name):
+    """Put the project name into a template file, leaving binaries alone."""
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return content
+    return text.replace("{name}", name).encode("utf-8")
+
+
+def next_steps(written):
     """What to tell someone who just scaffolded a project."""
-    return (
-        f"\n  cd {name}\n"
-        f"  pip install -r requirements.txt\n"
-        f"  gromon run {name}\n\n"
-        "Then open http://127.0.0.1:8000/"
+    root = written[0].parent
+    install = (
+        "  pip install -r requirements.txt"
+        if (root / "requirements.txt").is_file()
+        else "  pip install gromon"
     )
+    return f"\n  cd {root.name}\n{install}\n  gromon run {root.name}\n\nThen open http://127.0.0.1:8000/"
