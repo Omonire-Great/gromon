@@ -19,12 +19,17 @@
 from email.utils import formatdate, parsedate_to_datetime
 from mimetypes import guess_type
 from pathlib import Path
+import re
 
 from .errors import HTTPError
 
 # FSCSS has no registered media type, and mimetypes guesses nothing for it, so
 # a stylesheet would reach the browser as application/octet-stream.
 KINDS = {".fscss": "text/fscss"}
+
+# app.9f2c1a.js, app-9f2c1a4b.css, bundle.9f2c1a4b3d.js: a content hash in the
+# name, which means the bytes behind it will never change again.
+FINGERPRINT = re.compile(r"[.-][0-9a-f]{8,}\.")
 
 
 def kind_of(name, mimetype=None):
@@ -34,13 +39,17 @@ def kind_of(name, mimetype=None):
     return KINDS.get(Path(name).suffix.lower()) or guess_type(name)[0]
 
 
-def send_file(path, mimetype=None, conditional=True, download_name=None):
+def send_file(path, mimetype=None, conditional=True, download_name=None, max_age=None):
     """Return the value that serves a file, with caching headers.
 
     With `conditional` on, a request carrying a matching `If-None-Match` or
     `If-Modified-Since` gets `304 Not Modified` and no body, which is what
     browsers and CDNs ask for. A `Range` request gets `206 Partial Content` with
     just the bytes it asked for.
+
+    `max_age` sets Cache-Control in seconds. A file whose name carries a content
+    hash, the way `app.9f2c1a.js` does, is cached for a year and marked
+    immutable, because a new hash means a new name.
     """
     target = Path(path)
     if not target.is_file():
@@ -52,6 +61,7 @@ def send_file(path, mimetype=None, conditional=True, download_name=None):
         "ETag": f'"{details.st_mtime_ns:x}-{details.st_size:x}"',
         "Last-Modified": formatdate(details.st_mtime, usegmt=True),
         "Accept-Ranges": "bytes",
+        "Cache-Control": cache_for(target.name, max_age),
     }
     if download_name:
         headers["Content-Disposition"] = f'attachment; filename="{download_name}"'
@@ -75,6 +85,13 @@ def send_file(path, mimetype=None, conditional=True, download_name=None):
                 return handle.read(stop - start), 206, kind, headers
 
     return target.read_bytes(), 200, kind, headers
+
+
+def cache_for(name, max_age=None):
+    """The Cache-Control for a file: a year when the name carries a hash."""
+    if max_age is None:
+        max_age = 31_536_000 if FINGERPRINT.search(name) else 3600
+    return f"public, max-age={int(max_age)}" + (", immutable" if max_age > 86_400 else "")
 
 
 def _range(header, size):

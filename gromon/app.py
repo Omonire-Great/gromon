@@ -430,7 +430,9 @@ class App:
 
         @self.route(f"{prefix}/<path:path>")
         def serve(path):
-            return send_file(safe_join(folder, path))
+            return send_file(safe_join(folder, path), max_age=self.config.get("STATIC_MAX_AGE"))
+
+        return serve
 
     def render(self, template, **context):
         """Render a Jinja2 template. Needs pip install gromon[templates]."""
@@ -449,6 +451,23 @@ class App:
         from .testing import Client
 
         return Client(self)
+
+    @property
+    def wsgi(self):
+        """This app as a WSGI application, for gunicorn, uWSGI or waitress.
+
+            application = app.wsgi
+            gunicorn wsgi:application
+        """
+        from .wsgi import wsgi
+
+        return wsgi(self)
+
+    def openapi(self, title="API", version="1.0.0"):
+        """An OpenAPI 3.1 document describing every route this app answers."""
+        from .openapi import document
+
+        return document(self, title, version)
 
     def handle(self, request):
         """Turn a Request into a (status, content_type, body, headers) response."""

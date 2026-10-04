@@ -209,6 +209,27 @@ Then open http://127.0.0.1:8000/
     static/site.fscss    styles, in FSCSS
     static/app.js        talks to /api/hello
     static/fscss.min.js  the FSCSS compiler, served from your own app
+    tests/test_app.py    a test for each of those routes
+
+## Tests
+
+    gromon test
+
+No pytest, no plugins: this runs the tests in `tests/` with `unittest`, and
+exits non-zero when one fails, so it drops straight into CI.
+
+## Deploying
+
+`gromon run` is for writing. To serve it for real, hand it to a WSGI server:
+
+    # wsgi.py
+    from app import app
+
+    application = app.wsgi
+
+    gunicorn wsgi:application
+
+WebSocket routes do not go through WSGI, so serve those with `gromon run`.
 
 ## Styles
 
@@ -241,6 +262,46 @@ build/
 REQUIREMENTS = """gromon[templates]>=0.1.0
 """
 
+TEST = '''"""Tests for {name}. Run them with `gromon test`.
+
+No pytest, no plugins: gromon test runs these with unittest, so they also pass
+under pytest if you would rather use that.
+"""
+
+import unittest
+
+from app import app
+
+client = app.test_client()
+
+
+class TestPages(unittest.TestCase):
+    def test_home_answers(self):
+        self.assertEqual(client.get("/").status_code, 200)
+
+    def test_home_renders(self):
+        self.assertIn("{name}", client.get("/").text)
+
+    def test_unknown_page_is_404(self):
+        self.assertEqual(client.get("/nothing-here").status_code, 404)
+
+
+class TestApi(unittest.TestCase):
+    def test_hello(self):
+        reply = client.get("/api/hello")
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(reply.json["hello"], "world")
+
+    def test_middleware_counts_visits(self):
+        before = client.get("/api/hello").json["visits"]
+        after = client.get("/api/hello").json["visits"]
+        self.assertGreater(after, before)
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
 FILES = {
     "app.py": APP,
     "templates/base.html": BASE,
@@ -248,12 +309,13 @@ FILES = {
     "templates/404.html": NOT_FOUND,
     "static/site.fscss": STYLES,
     "static/app.js": SCRIPT,
+    "tests/test_app.py": TEST,
     "README.md": README,
     ".gitignore": IGNORE,
     "requirements.txt": REQUIREMENTS,
 }
 
-# What a project gets: the nine files above, plus the runtime next to them.
+# What a project gets: the ten files above, plus the runtime next to them.
 
 
 ENTRY = '''"""{name} - a Gromon app.

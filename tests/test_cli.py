@@ -597,8 +597,13 @@ class TestRunWithoutAFile:
         assert finished.returncode != 0
         assert "needs a file" in finished.stderr
 
-    def test_routes_still_needs_a_file(self, tmp_path):
+    def test_routes_finds_the_app_in_the_folder(self, tmp_path):
         (Path(tmp_path) / "app.py").write_text(APP)
+        finished = run("routes", cwd=str(tmp_path))
+        assert finished.returncode == 0, finished.stderr
+        assert "/user/<int:id>" in finished.stdout
+
+    def test_routes_still_needs_a_file_when_there_is_no_app(self, tmp_path):
         finished = run("routes", cwd=str(tmp_path))
         assert finished.returncode != 0
         assert "needs a file" in finished.stderr

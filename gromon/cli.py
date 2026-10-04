@@ -12,6 +12,7 @@ import runpy
 import subprocess
 import sys
 import time
+from json import dumps
 from pathlib import Path
 
 USAGE = """gromon - build Python applications with less code
@@ -20,6 +21,7 @@ usage:
   gromon new [--template FOLDER] <name>    start a project
   gromon run [options] <file.py|folder>   run it, reloading on changes
   gromon routes <file.py|folder>          print the routes an app has
+  gromon test [folder]                    run the tests in a project
   gromon cls                              clear the screen
 
 `new` is also spelled `createapp`.
@@ -29,6 +31,9 @@ options:
   --host HOST        address to bind          (default 127.0.0.1)
   --port PORT        port to bind             (default 8000)
   --no-reload        do not watch for changes
+  --json             with routes, print them as JSON
+  --openapi          with routes, print an OpenAPI document
+  -V, --version      show the version
   -h, --help         show this message
 
 A template is a starter kept in git. Every {name} in a file, or in a path,
@@ -116,8 +121,36 @@ def stop(child):
     child.wait()
 
 
-def show_routes(path):
+def show_routes(path, machine=False, spec=False):
     """Import an app without running it and print its routes."""
+    app = load_app(path)
+    if not app.routes:
+        sys.exit("gromon: no routes found; name your app `app` to list them")
+
+    if spec:
+        print(dumps(app.openapi(), indent=2))
+        return
+
+    # Mixing `@app.route` with the global `route` splits routes across two apps
+    # and half of them are never served, so say so rather than list the short half.
+    from .app import app as shared
+
+    if app is not shared and shared.routes:
+        print(
+            f"gromon: warning: {len(shared.routes)} more route(s) were registered on the"
+            " global app. Use one style: app.route(...), or the global route, not both.",
+            file=sys.stderr,
+        )
+
+    if machine:
+        print(dumps(machine_routes(app), indent=2))
+        return
+
+    print(app.routes_table())
+
+
+def load_app(path):
+    """Import an app without serving it, whichever way the file names it."""
     target = resolve(path)
     if not target.is_file():
         sys.exit(f"gromon: no such file: {target}")
@@ -126,21 +159,57 @@ def show_routes(path):
     from .app import app as shared
 
     namespace = runpy.run_path(str(target), run_name="gromon_routes")
-    # a file either builds its own App, or uses the global decorators
-    app = namespace.get("app") or namespace.get("application") or shared
-    if not app.routes:
-        sys.exit("gromon: no routes found; name your app `app` to list them")
+    return namespace.get("app") or namespace.get("application") or shared
 
-    # Mixing `@app.route` with the global `route` splits routes across two apps
-    # and half of them are never served, so say so rather than list the short half.
-    if app is not shared and shared.routes:
-        print(
-            f"gromon: warning: {len(shared.routes)} more route(s) were registered on the"
-            " global app. Use one style: app.route(...), or the global route, not both.",
-            file=sys.stderr,
-        )
 
-    print(app.routes_table())
+def run_tests(folder=None):
+    """Run the tests in a project: `gromon test`."""
+    import unittest
+
+    root = Path(folder or Path.cwd()).resolve()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+
+    found = [str(root / name) for name in ("test", "tests") if (root / name).is_dir()]
+    if not found:
+        sys.exit(f"gromon: no test folder in {root}\nMake one called test/ or tests/")
+
+    suite = unittest.TestSuite()
+    loader = unittest.TestLoader()
+    for place in found:
+        # No top_level_dir: that would demand an __init__.py in every tests/
+        # folder anyone ever writes. The project root is already on sys.path,
+        # so `from app import app` works either way.
+        suite.addTests(loader.discover(place))
+
+    if loader.errors:
+        for problem in loader.errors:
+            print(problem, file=sys.stderr)
+        sys.exit("gromon: could not load the tests")
+
+    if suite.countTestCases() == 0:
+        sys.exit(f"gromon: no tests found in {', '.join(found)}")
+
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    sys.exit(0 if result.wasSuccessful() else 1)
+
+
+def machine_routes(app):
+    """Every route as JSON, for diffing in CI or feeding another tool."""
+    return [
+        {
+            "path": template,
+            "endpoint": endpoint,
+            "methods": sorted(methods),
+            # kind is None on a plain text segment, which is not a parameter
+            "parameters": [
+                {"name": name, "converter": kind}
+                for name, kind in pattern
+                if kind is not None
+            ],
+        }
+        for pattern, _handler, methods, endpoint, template in app.routes
+    ]
 
 
 def resolve(path):
@@ -171,7 +240,7 @@ def start_project(arguments):
 
     template, names, pending = None, [], iter(arguments)
     for argument in pending:
-        if argument in ("--template", "--t"):
+        if argument in ("--template", "--t", "-t"):
             template = next(pending, None)
             if template is None:
                 sys.exit(f"gromon: --template needs a folder\n\n{USAGE}")
@@ -202,6 +271,11 @@ def main(argv=None):
     if not arguments or arguments[0] in ("-h", "--help"):
         print(USAGE)
         return
+    if arguments[0] in ("-V", "--version"):
+        from . import __version__
+
+        print(f"gromon {__version__}")
+        return
 
     command = arguments.pop(0)
     if command == "cls":
@@ -210,13 +284,24 @@ def main(argv=None):
     if command in ("new", "createapp"):
         start_project(arguments)
         return
+    if command == "test":
+        run_tests(arguments[0] if arguments else None)
+        return
     if command not in ("run", "_serve", "routes"):
         sys.exit(f"gromon: unknown command\n\n{USAGE}")
 
-    options, files, pending = {"host": "127.0.0.1", "port": 8000, "reload": True}, [], iter(arguments)
+    options, files, pending = (
+        {"host": "127.0.0.1", "port": 8000, "reload": True, "json": False, "openapi": False},
+        [],
+        iter(arguments),
+    )
     for argument in pending:
         if argument == "--no-reload":
             options["reload"] = False
+        elif argument == "--json":
+            options["json"] = True
+        elif argument == "--openapi":
+            options["openapi"] = True
         elif argument == "--host":
             options["host"] = next(pending)
         elif argument == "--port":
@@ -225,15 +310,18 @@ def main(argv=None):
             files.append(argument)
 
     if not files:
-        if command in ("run", "_serve") and (Path.cwd() / "app.py").is_file():
+        # In a project folder, the app is the one called app.py. Having to say
+        # `gromon routes .` every time is noise.
+        if (Path.cwd() / "app.py").is_file():
             files.append(".")
         else:
             sys.exit(f"gromon: {command} needs a file\n\n{USAGE}")
 
     if command == "routes":
-        show_routes(files[0])
+        show_routes(files[0], machine=options["json"] or options["openapi"], spec=options["openapi"])
         return
 
+    options.pop("json"), options.pop("openapi")
     options["reload"] = options["reload"] and command == "run"
 
     try:

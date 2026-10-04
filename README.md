@@ -279,6 +279,19 @@ static()                        # ./static at /static
 static("public", "/assets")     # ./public at /assets
 ```
 
+Every file comes with `ETag`, `Last-Modified`, `Accept-Ranges` and
+`Cache-Control`. A browser that has a copy sends `If-None-Match` back and gets a
+`304` with no body; a `Range` request gets just the bytes it asked for.
+
+`Cache-Control` is `public, max-age=3600` for an ordinary file, but a file whose
+name carries a content hash, the way `app.9f2c1a.js` does, is
+`public, max-age=31536000, immutable` for a year: a new hash means a new name,
+so the old one can never change. To set the age yourself:
+
+```python
+app.config["STATIC_MAX_AGE"] = 60      # seconds; 0 turns caching off
+```
+
 ## Templates
 
 Jinja2, optional and lazily imported.
@@ -475,6 +488,27 @@ def test_signup():
 and `query=`. The response has `status_code`, `headers`, `text`, `json`,
 `get_header()` and `data`, and it works as a context manager. A streamed body is
 read to the end for you, like a browser would.
+
+### Running the tests
+
+A new project comes with a test in it, and `gromon test` runs everything in
+`test/` or `tests/`:
+
+```
+gromon test             # the folder you are in
+gromon test ../shop     # or one you name
+```
+
+It is `unittest`, not pytest, so there is nothing to install and nothing to
+configure. Failing tests exit non-zero, which is all CI needs:
+
+```yaml
+- run: pip install -r requirements.txt
+- run: gromon test
+```
+
+The tests it finds are ordinary `unittest` classes, so `python -m pytest` and
+`python -m unittest` both still work on them if you would rather.
 
 ## Flash messages
 
@@ -689,8 +723,49 @@ GET,HEAD      /user/<int:id>                              user
 POST          /echo                                       echo
 ```
 
+`--json` prints the same routes as JSON, for a diff in CI or another tool to
+read. `--openapi` prints an OpenAPI document (see [OpenAPI](#openapi)):
+
+```bash
+gromon routes app.py --json
+gromon routes app.py --openapi
+```
+
+`gromon --version` prints the version, `-V` as well.
+
 `./static` and `./templates` are resolved relative to the file you run. Without
 the CLI, `python app.py` and `run()` do the same job with no reloading.
+
+### Putting it behind a real server
+
+`gromon run` is for writing. To put an app in front of real traffic, hand it to
+a WSGI server: gunicorn, uWSGI, waitress, mod_wsgi, whatever you already run.
+
+```python
+# wsgi.py
+from app import app
+
+application = app.wsgi
+```
+
+```bash
+gunicorn wsgi:application
+uwsgi --http :8000 --wsgi-file wsgi.py --callable application
+```
+
+`app.wsgi` is one line of `gromon.wsgi(app)`, which is what you want when the
+app is built somewhere else:
+
+```python
+from gromon import wsgi
+
+application = wsgi(api)
+```
+
+The route table, `send_file`, sessions, redirects, error pages and JSON all work
+the same; it is the same `handle()` the built-in server calls. WebSocket routes
+do not: WSGI has no way to hand a connection over for an upgrade, so serve those
+from gromon's own server.
 
 ## Two applications in one file
 
@@ -708,6 +783,53 @@ def ping():
 
 api.run(port=8001)
 ```
+
+## OpenAPI
+
+`app.openapi()` reads the routes the app already has and returns an OpenAPI 3.1
+document, so the spec cannot drift away from the code:
+
+```python
+@app.route("/user/<int:id>")
+def user(id):
+    return {"id": id}
+
+document = app.openapi("Shop API", "1.4.0")
+```
+
+A path converter becomes a typed parameter, which is the part worth having:
+
+```json
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Shop API", "version": "1.4.0" },
+  "paths": {
+    "/user/{id}": {
+      "get": {
+        "operationId": "user",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true,
+            "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    }
+  }
+}
+```
+
+`<int:...>` is an integer, `<float:...>` a number, `<uuid:...>` a uuid, and
+`<name>` or `<path:name>` a string. Endpoint names become `operationId`s, and
+`HEAD` and `OPTIONS` are left out, as they only ever mirror `GET`.
+
+To write it to a file, from the command line:
+
+```bash
+gromon routes app.py --openapi > openapi.json
+```
+
+Response bodies are not described. Working that out needs to know what your
+handlers return, and a wrong guess in a spec is worse than no spec at all.
 
 ## Examples
 
@@ -769,8 +891,9 @@ rules, blueprints including nested ones, middleware, teardown hooks, error
 handlers, static files with conditional and range requests, templates, sessions
 that expire, auth, rate limiting, payments, WebSocket, class based views, a test
 client, streaming, flashing, automatic `OPTIONS`, trusted hosts, a swappable JSON
-provider, config loaded from the environment, the CLI with reloading, and
-`gromon routes`.
+provider, config loaded from the environment, the CLI with reloading,
+`gromon routes`, `gromon test`, a WSGI entry point, and OpenAPI from the route
+table.
 
 Still open, roughly in order of how much a real application feels the absence:
 

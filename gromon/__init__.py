@@ -38,6 +38,7 @@ from .helpers import flash, get_flashed_messages, safe_join, send_file
 from .http import Request
 from .response import JSON
 from .views import MethodView
+from .wsgi import wsgi
 
 try:
     __version__ = _metadata.version("gromon")
@@ -76,4 +77,5 @@ __all__ = [
     "url_for",
     "use",
     "websocket",
+    "wsgi",
 ]
